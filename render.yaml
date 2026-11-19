@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: nts-task-management
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: TZ
+        value: Asia/Kolkata
+      - key: KEEP_ALIVE_INTERVAL_MINUTES
+        value: 5
+      # Connect your PostgreSQL database credentials in Render Dashboard:
+      # - PSQL_HOST
+      # - PSQL_DATABASE
+      # - PSQL_USERNAME
+      # - PSQL_PASSWORD
+      # - PSQL_PORT (5432)
+      # - PSQL_SSLMODE (require)
+      # Or provide DATABASE_URL directly.
