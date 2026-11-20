@@ -437,28 +437,11 @@ const MonthlyPlanner = () => {
                     </span>
                   </div>
 
-                  {/* Progress & Assignee */}
-                  <div className="pt-1.5 space-y-1">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-slate-400">
-                        Assignee: <span className="text-slate-700 dark:text-slate-300 font-medium">
-                          {t.assigned_employees?.map((e) => `${e.first_name} ${e.last_name}`).join(', ') || 'Unassigned'}
-                        </span>
-                      </span>
-                      <span className="font-bold text-slate-700 dark:text-slate-300">{t.progress}%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${
-                          t.progress === 100
-                            ? 'bg-emerald-500'
-                            : t.is_overdue
-                            ? 'bg-rose-500'
-                            : 'bg-brand-500'
-                        }`}
-                        style={{ width: `${t.progress}%` }}
-                      />
-                    </div>
+                  {/* Assignee */}
+                  <div className="pt-1 text-[11px] text-slate-400">
+                    Assignee: <span className="text-slate-700 dark:text-slate-300 font-medium">
+                      {t.assigned_employees?.map((e) => `${e.first_name} ${e.last_name}`).join(', ') || 'Unassigned'}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -474,7 +457,6 @@ const MonthlyPlanner = () => {
                     <th className="py-3 px-3">Assignee(s)</th>
                     <th className="py-3 px-3">Priority</th>
                     <th className="py-3 px-3">Status</th>
-                    <th className="py-3 px-3">Progress</th>
                     <th className="py-3 px-3">Deadline</th>
                     <th className="py-3 px-4 text-right rounded-r-xl">Action</th>
                   </tr>
@@ -505,19 +487,6 @@ const MonthlyPlanner = () => {
                       </td>
                       <td className="py-3.5 px-3">{getPriorityBadge(t.priority)}</td>
                       <td className="py-3.5 px-3">{getStatusBadge(t.status)}</td>
-                      <td className="py-3.5 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-16 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${
-                                t.progress === 100 ? 'bg-emerald-500' : 'bg-brand-500'
-                              }`}
-                              style={{ width: `${t.progress}%` }}
-                            />
-                          </div>
-                          <span className="font-bold text-[10px] text-slate-700 dark:text-slate-300">{t.progress}%</span>
-                        </div>
-                      </td>
                       <td className={`py-3.5 px-3 font-medium ${t.is_overdue ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
                         {t.due_date || 'N/A'}
                       </td>
