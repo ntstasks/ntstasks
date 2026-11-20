@@ -363,13 +363,6 @@ const EmployeeDetailedPerformance = () => {
                     <span>Category: <strong className="text-slate-700">{t.category}</strong></span>
                     <span>Due: <strong className={t.is_overdue ? 'text-rose-600 font-bold' : 'text-slate-700'}>{t.due_date || 'N/A'}</strong></span>
                   </div>
-
-                  <div className="pt-1 flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-brand-500 rounded-full" style={{ width: `${t.progress}%` }} />
-                    </div>
-                    <span className="font-bold text-[10px] text-slate-700">{t.progress}%</span>
-                  </div>
                 </div>
               ))}
             </div>
@@ -383,7 +376,6 @@ const EmployeeDetailedPerformance = () => {
                     <th className="py-3 px-3">Category</th>
                     <th className="py-3 px-3">Priority</th>
                     <th className="py-3 px-3">Status</th>
-                    <th className="py-3 px-3">Progress</th>
                     <th className="py-3 px-3">Deadline</th>
                     <th className="py-3 px-4 text-right rounded-r-xl">Action</th>
                   </tr>
@@ -401,17 +393,6 @@ const EmployeeDetailedPerformance = () => {
                       <td className="py-3.5 px-3 text-slate-600">{t.category}</td>
                       <td className="py-3.5 px-3">{getPriorityBadge(t.priority)}</td>
                       <td className="py-3.5 px-3">{getStatusBadge(t.status)}</td>
-                      <td className="py-3.5 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-16 h-2 bg-slate-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-brand-500 rounded-full"
-                              style={{ width: `${t.progress}%` }}
-                            />
-                          </div>
-                          <span className="font-bold text-[11px] text-slate-700">{t.progress}%</span>
-                        </div>
-                      </td>
                       <td className={`py-3.5 px-3 font-medium ${t.is_overdue ? 'text-rose-600 font-bold' : 'text-slate-700'}`}>
                         {t.due_date || 'N/A'}
                       </td>
