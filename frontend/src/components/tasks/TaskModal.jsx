@@ -85,13 +85,22 @@ const TaskModal = ({ isOpen, onClose, taskToEdit, onTaskSaved }) => {
 
     setSubmitting(true);
     try {
+      let calculatedProgress = parseInt(progress, 10) || 0;
+      if (status === 'completed') {
+        calculatedProgress = 100;
+      } else if (status === 'not_started') {
+        calculatedProgress = 0;
+      } else if (status === 'in_progress') {
+        calculatedProgress = calculatedProgress > 0 && calculatedProgress < 100 ? calculatedProgress : 50;
+      }
+
       const payload = {
         title: title.trim(),
         description: description.trim(),
         department_id: departmentId ? parseInt(departmentId, 10) : null,
         priority,
         status,
-        progress: taskToEdit ? (parseInt(progress, 10) || 0) : (status === 'completed' ? 100 : 0),
+        progress: calculatedProgress,
         start_date: startDate || null,
         due_date: dueDate || null,
         estimated_hours: taskToEdit?.estimated_hours ? parseFloat(taskToEdit.estimated_hours) : 0,
@@ -134,7 +143,7 @@ const TaskModal = ({ isOpen, onClose, taskToEdit, onTaskSaved }) => {
               {taskToEdit ? 'Edit Task' : 'Create New Task'}
             </h2>
             <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium">
-              {taskToEdit ? 'Update details, progress and assignment' : 'Add assignment to your work schedule'}
+              {taskToEdit ? 'Update task details and assignment' : 'Add assignment to your work schedule'}
             </p>
           </div>
           <button
@@ -217,53 +226,28 @@ const TaskModal = ({ isOpen, onClose, taskToEdit, onTaskSaved }) => {
             </div>
           </div>
 
-          {/* Status & Progress (Progress slider removed for Create New Task) */}
-          <div className={taskToEdit ? "grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4" : "block"}>
-            <div>
-              <label className="block text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Status
-              </label>
-              <select
-                value={status}
-                onChange={(e) => {
-                  setStatus(e.target.value);
-                  if (e.target.value === 'completed') setProgress(100);
-                  else if (e.target.value === 'not_started') setProgress(0);
-                }}
-                className="w-full px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 text-xs sm:text-sm"
-              >
-                <option value="not_started">Not Started</option>
-                <option value="in_progress">In Progress</option>
-                <option value="on_hold">On Hold</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-
-            {taskToEdit && (
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                    Progress Percentage
-                  </label>
-                  <span className="text-xs font-bold text-brand-600 dark:text-brand-400">{progress}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="5"
-                  value={progress}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10);
-                    setProgress(val);
-                    if (val === 100 && status !== 'completed') setStatus('completed');
-                    if (val < 100 && status === 'completed') setStatus('in_progress');
-                  }}
-                  className="w-full accent-brand-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg"
-                />
-              </div>
-            )}
+          {/* Status */}
+          <div>
+            <label className="block text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+              Status
+            </label>
+            <select
+              value={status}
+              onChange={(e) => {
+                const newStatus = e.target.value;
+                setStatus(newStatus);
+                if (newStatus === 'completed') setProgress(100);
+                else if (newStatus === 'not_started') setProgress(0);
+                else if (newStatus === 'in_progress' && (progress === 0 || progress === 100)) setProgress(50);
+              }}
+              className="w-full px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 text-xs sm:text-sm"
+            >
+              <option value="not_started">Not Started</option>
+              <option value="in_progress">In Progress</option>
+              <option value="on_hold">On Hold</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
           </div>
 
           {/* Dates Row */}
