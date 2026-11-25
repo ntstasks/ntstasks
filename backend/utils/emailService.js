@@ -1,30 +1,46 @@
 const { SMTPClient } = require('emailjs');
 
-const senderMail = (process.env.SENDER_MAIL || 'info@neuraltechsoft.com').trim();
-const senderPass = (process.env.SENDER_PASSWORD || '').replace(/\s+/g, '');
+const getSenderConfig = () => {
+  const senderMail = (process.env.SENDER_MAIL || 'info@neuraltechsoft.com').trim();
+  const senderPass = (process.env.SENDER_PASSWORD || '').replace(/\s+/g, '');
 
-if (!senderMail || !senderPass) {
-  console.warn('[EmailService] Warning: SENDER_MAIL or SENDER_PASSWORD is not set in .env');
-}
+  if (!senderMail || !senderPass) {
+    console.warn('[EmailService] Warning: SENDER_MAIL or SENDER_PASSWORD is not set in .env');
+  }
 
-// Initialize native SMTP client via emailjs (direct SSL over port 465)
-const client = new SMTPClient({
-  user: senderMail,
-  password: senderPass,
-  host: 'smtp.gmail.com',
-  ssl: true,
-  port: 465,
-  timeout: 10000
-});
+  return { senderMail, senderPass };
+};
 
 /**
- * Send Password Reset OTP Email using emailjs
+ * Creates a fresh SMTPClient for each transmission to prevent socket reuse errors
+ * @param {number} [port=465]
+ * @param {boolean} [ssl=true]
+ */
+const createClient = (port = 465, ssl = true) => {
+  const { senderMail, senderPass } = getSenderConfig();
+
+  return new SMTPClient({
+    user: senderMail,
+    password: senderPass,
+    host: 'smtp.gmail.com',
+    ssl: ssl,
+    port: port,
+    timeout: 10000,
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
+};
+
+/**
+ * Send Password Reset OTP Email using emailjs with automatic port fallback
  * @param {Object} params
  * @param {string} params.to - Recipient email address
  * @param {string} params.otp - 6-digit OTP code
  * @param {string} [params.userName] - Recipient name
  */
 const sendPasswordResetOtp = async ({ to, otp, userName }) => {
+  const { senderMail } = getSenderConfig();
   const recipientName = userName && userName.trim() ? userName.trim() : 'Team Member';
   const cleanTo = to.trim().toLowerCase();
 
@@ -104,27 +120,41 @@ const sendPasswordResetOtp = async ({ to, otp, userName }) => {
     </html>
   `;
 
-  try {
-    const message = await client.sendAsync({
-      text: plainText,
-      from: `NTS Task Management <${senderMail}>`,
-      to: cleanTo,
-      subject: `Your NTS Password Reset Verification Code: ${otp}`,
-      attachment: [
-        { data: htmlContent, alternative: true }
-      ]
-    });
+  const msgPayload = {
+    text: plainText,
+    from: `NTS Task Management <${senderMail}>`,
+    to: cleanTo,
+    subject: `Your NTS Password Reset Verification Code: ${otp}`,
+    attachment: [
+      { data: htmlContent, alternative: true }
+    ]
+  };
 
+  // Primary attempt: Direct SSL port 465 (fresh client per request)
+  try {
+    const primaryClient = createClient(465, true);
+    const message = await primaryClient.sendAsync(msgPayload);
     const msgId = message.header ? message.header['message-id'] : 'delivered';
-    console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via emailjs. MessageId: ${msgId}`);
+    console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via port 465. MessageId: ${msgId}`);
     return message;
-  } catch (err) {
-    console.error(`[EmailService] Failed to send OTP email to ${cleanTo} via emailjs:`, err.message || err);
-    throw err;
+  } catch (err465) {
+    console.warn(`[EmailService] Port 465 attempt noticed error (${err465.message}). Retrying on Port 587 (STARTTLS)...`);
+
+    // Fallback attempt: Port 587 with STARTTLS (crucial for cloud VPS / Render environments)
+    try {
+      const fallbackClient = createClient(587, false);
+      const message = await fallbackClient.sendAsync(msgPayload);
+      const msgId = message.header ? message.header['message-id'] : 'delivered';
+      console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via fallback port 587. MessageId: ${msgId}`);
+      return message;
+    } catch (err587) {
+      console.error(`[EmailService] Failed to send OTP email to ${cleanTo} via both port 465 and 587:`, err587.message || err587);
+      throw err587;
+    }
   }
 };
 
 module.exports = {
-  client,
+  createClient,
   sendPasswordResetOtp
 };
