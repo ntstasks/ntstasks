@@ -1,14 +1,13 @@
 const { SMTPClient } = require('emailjs');
+const { Resend } = require('resend');
 
 const getSenderConfig = () => {
   const senderMail = (process.env.SENDER_MAIL || 'info@neuraltechsoft.com').trim();
   const senderPass = (process.env.SENDER_PASSWORD || '').replace(/\s+/g, '');
+  const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
+  const resendFrom = (process.env.RESEND_FROM || 'NTS Security <onboarding@resend.dev>').trim();
 
-  if (!senderMail || !senderPass) {
-    console.warn('[EmailService] Warning: SENDER_MAIL or SENDER_PASSWORD is not set in .env');
-  }
-
-  return { senderMail, senderPass };
+  return { senderMail, senderPass, resendApiKey, resendFrom };
 };
 
 /**
@@ -16,7 +15,7 @@ const getSenderConfig = () => {
  * @param {number} [port=465]
  * @param {boolean} [ssl=true]
  */
-const createClient = (port = 465, ssl = true) => {
+const createSmtpClient = (port = 465, ssl = true) => {
   const { senderMail, senderPass } = getSenderConfig();
 
   return new SMTPClient({
@@ -33,14 +32,16 @@ const createClient = (port = 465, ssl = true) => {
 };
 
 /**
- * Send Password Reset OTP Email using emailjs with automatic port fallback
+ * Send Password Reset OTP Email
+ * - If RESEND_API_KEY is configured: Uses Resend HTTPS API (Port 443 - works on Render Free tier)
+ * - Otherwise: Uses direct SMTP via emailjs (Port 465 / 587 - for paid Render or local VPS)
  * @param {Object} params
  * @param {string} params.to - Recipient email address
  * @param {string} params.otp - 6-digit OTP code
  * @param {string} [params.userName] - Recipient name
  */
 const sendPasswordResetOtp = async ({ to, otp, userName }) => {
-  const { senderMail } = getSenderConfig();
+  const { senderMail, resendApiKey, resendFrom } = getSenderConfig();
   const recipientName = userName && userName.trim() ? userName.trim() : 'Team Member';
   const cleanTo = to.trim().toLowerCase();
 
@@ -120,6 +121,30 @@ const sendPasswordResetOtp = async ({ to, otp, userName }) => {
     </html>
   `;
 
+  // 1. If RESEND_API_KEY is present, send over HTTPS Port 443 (Immune to Render Free Tier SMTP block)
+  if (resendApiKey) {
+    try {
+      const resend = new Resend(resendApiKey);
+      const resendResponse = await resend.emails.send({
+        from: resendFrom,
+        to: cleanTo,
+        subject: `Your NTS Password Reset Verification Code: ${otp}`,
+        text: plainText,
+        html: htmlContent
+      });
+
+      if (resendResponse.error) {
+        throw new Error(resendResponse.error.message || 'Resend API returned error');
+      }
+
+      console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via Resend HTTPS (port 443). Id: ${resendResponse.data?.id}`);
+      return resendResponse;
+    } catch (resendErr) {
+      console.warn(`[EmailService] Resend HTTPS failed (${resendErr.message}). Attempting SMTP fallback...`);
+    }
+  }
+
+  // 2. Direct SMTP Attempt (Port 465)
   const msgPayload = {
     text: plainText,
     from: `NTS Task Management <${senderMail}>`,
@@ -130,31 +155,30 @@ const sendPasswordResetOtp = async ({ to, otp, userName }) => {
     ]
   };
 
-  // Primary attempt: Direct SSL port 465 (fresh client per request)
   try {
-    const primaryClient = createClient(465, true);
+    const primaryClient = createSmtpClient(465, true);
     const message = await primaryClient.sendAsync(msgPayload);
     const msgId = message.header ? message.header['message-id'] : 'delivered';
     console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via port 465. MessageId: ${msgId}`);
     return message;
   } catch (err465) {
-    console.warn(`[EmailService] Port 465 attempt noticed error (${err465.message}). Retrying on Port 587 (STARTTLS)...`);
+    console.warn(`[EmailService] Port 465 notice (${err465.message}). Retrying on Port 587...`);
 
-    // Fallback attempt: Port 587 with STARTTLS (crucial for cloud VPS / Render environments)
+    // 3. Fallback: Port 587 (STARTTLS)
     try {
-      const fallbackClient = createClient(587, false);
+      const fallbackClient = createSmtpClient(587, false);
       const message = await fallbackClient.sendAsync(msgPayload);
       const msgId = message.header ? message.header['message-id'] : 'delivered';
-      console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via fallback port 587. MessageId: ${msgId}`);
+      console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via port 587. MessageId: ${msgId}`);
       return message;
     } catch (err587) {
-      console.error(`[EmailService] Failed to send OTP email to ${cleanTo} via both port 465 and 587:`, err587.message || err587);
-      throw err587;
+      console.error(`[EmailService] Both Port 465 and Port 587 failed: ${err587.message}`);
+      throw new Error(`Email delivery blocked. (Note: On Render Free tier, ports 465 & 587 are blocked. Set RESEND_API_KEY in Render environment variables to send over HTTPS port 443).`);
     }
   }
 };
 
 module.exports = {
-  createClient,
+  createSmtpClient,
   sendPasswordResetOtp
 };
