@@ -1,5 +1,4 @@
 const { SMTPClient } = require('emailjs');
-const { Resend } = require('resend');
 
 const getSenderConfig = () => {
   const senderMail = (process.env.SENDER_MAIL || 'info@neuraltechsoft.com').trim();
@@ -32,8 +31,34 @@ const createSmtpClient = (port = 465, ssl = true) => {
 };
 
 /**
+ * Send email via Resend REST API using Node.js native fetch (zero external dependencies)
+ */
+const sendViaResendHttps = async ({ apiKey, from, to, subject, text, html }) => {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject,
+      text,
+      html
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || `Resend HTTP error ${response.status}`);
+  }
+  return data;
+};
+
+/**
  * Send Password Reset OTP Email
- * - If RESEND_API_KEY is configured: Uses Resend HTTPS API (Port 443 - works on Render Free tier)
+ * - If RESEND_API_KEY is configured: Uses Resend HTTPS API (Port 443 - works on Render Free tier via native fetch)
  * - Otherwise: Uses direct SMTP via emailjs (Port 465 / 587 - for paid Render or local VPS)
  * @param {Object} params
  * @param {string} params.to - Recipient email address
@@ -121,11 +146,11 @@ const sendPasswordResetOtp = async ({ to, otp, userName }) => {
     </html>
   `;
 
-  // 1. If RESEND_API_KEY is present, send over HTTPS Port 443 (Immune to Render Free Tier SMTP block)
+  // 1. If RESEND_API_KEY is present, send over HTTPS Port 443 via native fetch (Immune to Render Free Tier SMTP block)
   if (resendApiKey) {
     try {
-      const resend = new Resend(resendApiKey);
-      const resendResponse = await resend.emails.send({
+      const resendData = await sendViaResendHttps({
+        apiKey: resendApiKey,
         from: resendFrom,
         to: cleanTo,
         subject: `Your NTS Password Reset Verification Code: ${otp}`,
@@ -133,14 +158,10 @@ const sendPasswordResetOtp = async ({ to, otp, userName }) => {
         html: htmlContent
       });
 
-      if (resendResponse.error) {
-        throw new Error(resendResponse.error.message || 'Resend API returned error');
-      }
-
-      console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via Resend HTTPS (port 443). Id: ${resendResponse.data?.id}`);
-      return resendResponse;
+      console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via Resend HTTPS (port 443). Id: ${resendData?.id}`);
+      return resendData;
     } catch (resendErr) {
-      console.warn(`[EmailService] Resend HTTPS failed (${resendErr.message}). Attempting SMTP fallback...`);
+      console.warn(`[EmailService] Resend HTTPS notice (${resendErr.message}). Attempting SMTP fallback...`);
     }
   }
 
