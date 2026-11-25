@@ -3,7 +3,7 @@
 A modern, streamlined **Employee Task Management & Reporting System** built with **React.js**, **Node.js**, **Express.js**, **Tailwind CSS**, **Recharts**, and **PostgreSQL** (via Sequelize ORM).
 
 The system provides a unified, distraction-free experience across two distinct panels:
-- **Employee Panel**: Personal task tracking, monthly deliverables, and direct task editing.
+- **Employee Panel**: Personal task tracking, monthly deliverables, direct task editing, and secure OTP-based password recovery.
 - **Admin Panel**: Team-wide monitoring, monthly task management with employee filtering, in-depth performance analytics, and integrated Excel/PDF report exports.
 
 ---
@@ -52,6 +52,14 @@ The system provides a unified, distraction-free experience across two distinct p
 - **Simplified Settings**:
   - Clean settings page focused strictly on user preferences and profile information.
 
+### 3. Secure Mailbox OTP Password Recovery
+- **Company Roster Pre-Verification**: Before generating an OTP, the system verifies that the employee exists in the company roster with an active employee profile. Deactivated or unknown emails are rejected immediately.
+- **Cryptographic OTP Generation**: Generates a secure 6-digit numeric code with a 10-minute validity window.
+- **One-Way SHA-256 Hashing**: Plaintext OTPs are never stored in the database. Only one-way SHA-256 hashes are recorded in `users.reset_token`.
+- **Direct Native SMTP via `emailjs`**: Sends responsive, branded HTML emails through direct SSL (port 465) to `smtp.gmail.com` using the configured company email (`info@neuraltechsoft.com`).
+- **Strict Mailbox Security**: The OTP is sent exclusively to the employee's private mailbox and is never exposed in API responses or on-screen without email verification.
+- **Single-Use Token Wiping**: The token and expiration timestamp are immediately wiped (`NULL`) upon successful password reset, preventing replay attacks.
+
 ---
 
 ## 🛠️ Technology Stack
@@ -60,8 +68,9 @@ The system provides a unified, distraction-free experience across two distinct p
 |---|---|
 | **Frontend** | React 18, Vite 6, Tailwind CSS, Lucide React Icons, Recharts, Axios, React Router DOM v7 |
 | **Backend** | Node.js (>=18), Express.js 4, Sequelize ORM 6, PostgreSQL (`pg`), JWT, Bcryptjs |
+| **Email Service** | `emailjs` (native direct SSL SMTP connection via port 465 to `smtp.gmail.com`) |
 | **Reporting** | ExcelJS (backend Excel generation), PDFKit & PDFKit-Table (backend PDF generation), jsPDF & XLSX (frontend fallback) |
-| **Database** | PostgreSQL (supports local PostgreSQL or cloud AWS RDS PostgreSQL) |
+| **Database** | PostgreSQL (supports local PostgreSQL or cloud AWS RDS PostgreSQL with SSL) |
 | **Timezone** | Global Indian Standard Time (`Asia/Kolkata`, GMT+5:30) |
 
 ---
@@ -71,35 +80,30 @@ The system provides a unified, distraction-free experience across two distinct p
 ```plaintext
 ntstask/
 ├── backend/
-│   ├── config/             # Sequelize database configuration
-│   ├── controllers/        # REST API controllers (tasks, employees, analytics, reports, etc.)
-│   ├── middleware/         # Auth, validation, and error middlewares
+│   ├── config/             # Sequelize database configuration (database.js)
+│   ├── controllers/        # REST API controllers (auth, tasks, employees, analytics, reports)
+│   ├── middleware/         # Auth (JWT) and Multer file upload middlewares
 │   ├── models/             # Sequelize data models (User, Employee, Task, Department, etc.)
-│   ├── routes/             # Express API routes
-│   ├── scripts/            # Database inspection and utility scripts
-│   ├── utils/              # IST date utilities, report formatting helpers
-│   ├── app.js              # Express app initialization and route registration
-│   ├── server.js           # Server entry point with keep-alive self-ping
+│   ├── routes/             # Express API routes (/api/auth, /api/tasks, /api/employees, etc.)
+│   ├── scripts/            # Database inspection, test scripts, and migrations
+│   │   ├── test_send_otp_mail.js # CLI tool to test emailjs OTP delivery
+│   │   ├── test_otp_db.js        # CLI tool to inspect user tokens and expiry in DB
+│   │   ├── seed_admin.js         # Initial administrator setup
+│   │   └── inspect_db_data.js    # Database inventory and health check
+│   ├── utils/              # emailService.js (emailjs SMTP), dateUtils.js (IST), activityLogger.js
+│   ├── app.js              # Express app initialization, CORS, and SPA routing
+│   ├── server.js           # Server entry point with Render keep-alive self-ping
 │   └── package.json        # Backend dependencies
 ├── frontend/
 │   ├── src/
 │   │   ├── assets/         # Static images, branding logos
-│   │   ├── components/     # Reusable UI components
-│   │   │   ├── charts/     # Recharts visualizers
-│   │   │   ├── common/     # Badges, loaders, confirm dialogs
-│   │   │   ├── reports/    # ExportReportModal component
-│   │   │   └── tasks/      # TaskModal, CarryForwardModal
-│   │   ├── context/        # Auth, Theme, and Toast providers
-│   │   ├── hooks/          # Custom React hooks (e.g. scroll locking)
+│   │   ├── components/     # Reusable UI components (TaskModal, CarryForwardModal, ExportReportModal)
+│   │   ├── context/        # AuthContext, ThemeContext, ToastContext
+│   │   ├── hooks/          # useBodyScrollLock hook
 │   │   ├── layouts/        # MainLayout, Navbar, Sidebar
-│   │   ├── pages/          # Application views
-│   │   │   ├── admin/      # AdminDashboard, EmployeesManagement, AdminsManagement, etc.
-│   │   │   ├── employee/   # EmployeeDashboard
-│   │   │   ├── MonthlyPlanner.jsx # Unified Monthly Tasks view
-│   │   │   ├── Login.jsx   # Authentication view
-│   │   │   └── Settings.jsx# User settings
-│   │   ├── routes/         # AppRoutes with role-based route protection and redirects
-│   │   ├── services/       # Axios API client services
+│   │   ├── pages/          # AdminDashboard, EmployeeDashboard, MonthlyPlanner, Login, Settings
+│   │   ├── routes/         # AppRoutes with role-based route protection
+│   │   ├── services/       # api.js (Axios client with interceptors)
 │   │   └── utils/          # Status and priority badge helpers
 │   ├── package.json        # Frontend dependencies
 │   └── vite.config.js      # Vite build configuration
@@ -123,7 +127,7 @@ Copy the environment template to `.env` in the root directory:
 cp .env.example .env
 ```
 
-Configure your database and JWT credentials in `.env`:
+Configure your database, JWT, and email credentials in `.env`:
 ```env
 # Database Configuration (PostgreSQL / AWS RDS)
 PSQL_HOST=your-postgres-host
@@ -139,6 +143,13 @@ PORT=5000
 JWT_SECRET=your_jwt_secret_key_here
 JWT_EXPIRES_IN=7d
 TZ=Asia/Kolkata
+
+# Mail / OTP Configuration (emailjs SMTP)
+SENDER_MAIL=info@neuraltechsoft.com
+SENDER_PASSWORD=your_app_password_here
+
+# Render Keep-Alive Configuration
+KEEP_ALIVE_INTERVAL_MINUTES=5
 ```
 
 ### 3. Installation
@@ -162,21 +173,37 @@ Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 
 ---
 
-## 🔑 Demo User Accounts
+## 🛠️ Helpful Terminal Utility Scripts
 
-| Role | Email | Password | Access Scope |
-|---|---|---|---|
-| **Administrator** | `admin@nts.com` | `Password123!` | Full admin access: Admin Dashboard, Monthly Tasks with Employee Filter, Employees Management, Export Reports (Excel/PDF), Admins Management. |
-| **Employee** | `alex.morgan@nts.com` | `Password123!` | Employee Panel: Personal Dashboard, Monthly Deliverables, Task Creation and Editing, Personal Settings. |
+The project includes purpose-built utility scripts in `backend/scripts/`:
+
+```bash
+# 1. Test sending live OTP email to any address via emailjs
+node backend/scripts/test_send_otp_mail.js your-email@example.com
+
+# 2. Inspect user reset tokens and expiry in PostgreSQL database
+node backend/scripts/test_otp_db.js employee@company.com
+
+# 3. View entire database inventory (users, employees, departments, tasks)
+node backend/scripts/inspect_db_data.js
+
+# 4. Seed initial default administrator account
+npm run db:seed:admin
+```
 
 ---
 
 ## 📡 Core REST API Endpoints
 
 ### Authentication (`/api/auth`)
-- `POST /api/auth/login` – User authentication & JWT issuance
-- `GET /api/auth/me` – Retrieve authenticated session profile
-- `POST /api/auth/logout` – Session logout
+- `POST /api/auth/login` – User authentication & JWT issuance (supports `portal: 'employee'` or `'admin'`)
+- `POST /api/auth/register` – Register new employee with automatic profile creation
+- `GET /api/auth/profile` – Retrieve authenticated session profile
+- `PUT /api/auth/profile` – Update user personal profile
+- `PUT /api/auth/change-password` – Change password while authenticated
+- `POST /api/auth/forgot-password` – Verifies company employee existence, generates 6-digit OTP, and sends email via `emailjs`
+- `POST /api/auth/verify-otp` – Validates the 6-digit OTP against unexpired database token
+- `POST /api/auth/reset-password` – Verifies OTP and resets account password with immediate token invalidation
 
 ### Tasks (`/api/tasks`)
 - `GET /api/tasks` – Retrieve filtered tasks (supports month, employee_id, status, priority)
@@ -196,7 +223,8 @@ Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 ### Reports & Analytics (`/api/reports` & `/api/analytics`)
 - `GET /api/reports/excel` – Generate and stream structured Excel (`.xlsx`) task report
 - `GET /api/reports/pdf` – Generate and stream formatted PDF (`.pdf`) executive summary
-- `GET /api/analytics/dashboard` – Overall organization summary statistics
+- `GET /api/analytics/admin-dashboard` – Organization-wide KPIs, department workload, and trends
+- `GET /api/analytics/employee-dashboard` – Personal employee KPIs and weekly activity
 - `GET /api/analytics/employee-performance/:id` – Detailed employee performance analysis
 
 ### Health Check (`/api/health`)
@@ -215,10 +243,13 @@ npm run build
 # Start production server
 npm start
 ```
-The Express server automatically serves the compiled frontend assets from `frontend/dist` and handles single-page application (SPA) routing, making it ready for deployment on platforms like Render, AWS EC2, or Railway.
+
+The Express server automatically serves the compiled frontend assets from `frontend/dist` and handles single-page application (SPA) routing, making it ready for single-service deployment on platforms like Render, AWS EC2, or Railway.
 
 ---
 
 ## 🔒 Safety & Data Integrity Standards
-- **Database Safety**: Tables, schemas, and historical task/employee records are preserved and protected against destructive resets or unapproved migrations.
+- **Strict Existence Checks**: OTPs are only generated for confirmed, active employees in the company roster.
+- **Database Safety**: Tables, schemas, and historical task/employee records are protected against destructive resets or unapproved migrations.
+- **Timezone Enforcement**: All deadlines, activity logs, and monthly plans are calculated using Indian Standard Time (`Asia/Kolkata`, GMT+5:30).
 - **Internal Identifiers**: Primary IDs and employee keys remain active in backend schemas and APIs for relational queries, while user-facing screens display human-friendly names and designations.
