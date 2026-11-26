@@ -3,10 +3,11 @@ const { SMTPClient } = require('emailjs');
 const getSenderConfig = () => {
   const senderMail = (process.env.SENDER_MAIL || 'info@neuraltechsoft.com').trim();
   const senderPass = (process.env.SENDER_PASSWORD || '').replace(/\s+/g, '');
+  const gmailWebhookUrl = (process.env.GMAIL_WEBHOOK_URL || '').trim();
   const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
   const resendFrom = (process.env.RESEND_FROM || 'NTS Security <onboarding@resend.dev>').trim();
 
-  return { senderMail, senderPass, resendApiKey, resendFrom };
+  return { senderMail, senderPass, gmailWebhookUrl, resendApiKey, resendFrom };
 };
 
 /**
@@ -28,6 +29,47 @@ const createSmtpClient = (port = 465, ssl = true) => {
       rejectUnauthorized: false
     }
   });
+};
+
+/**
+ * Send email via Google Apps Script Web App over HTTPS Port 443
+ * (100% Free, sends directly from info@neuraltechsoft.com to any recipient)
+ */
+const sendViaGoogleAppsScriptHttps = async ({ webhookUrl, to, subject, text, html }) => {
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      to,
+      subject,
+      text,
+      html
+    }),
+    redirect: 'follow'
+  });
+
+  const responseText = await response.text();
+  let data;
+  try {
+    data = JSON.parse(responseText);
+  } catch (parseErr) {
+    // If not JSON, check status code and text
+    if (!response.ok) {
+      if (response.status === 403 || responseText.includes('You need access')) {
+        throw new Error('Google Apps Script access blocked (403). Please set "Who has access" to "Anyone" in script deployment settings.');
+      }
+      throw new Error(`Google Apps Script HTTP error ${response.status}: ${responseText.substring(0, 150)}`);
+    }
+  }
+
+  if (!response.ok || (data && data.success === false)) {
+    const errorMsg = data?.error || (typeof data === 'object' ? JSON.stringify(data) : responseText.substring(0, 150));
+    throw new Error(`Google Apps Script delivery error: ${errorMsg}`);
+  }
+
+  return data || { success: true };
 };
 
 /**
@@ -66,7 +108,7 @@ const sendViaResendHttps = async ({ apiKey, from, to, subject, text, html }) => 
  * @param {string} [params.userName] - Recipient name
  */
 const sendPasswordResetOtp = async ({ to, otp, userName }) => {
-  const { senderMail, resendApiKey, resendFrom } = getSenderConfig();
+  const { senderMail, gmailWebhookUrl, resendApiKey, resendFrom } = getSenderConfig();
   const recipientName = userName && userName.trim() ? userName.trim() : 'Team Member';
   const cleanTo = to.trim().toLowerCase();
 
@@ -146,7 +188,25 @@ const sendPasswordResetOtp = async ({ to, otp, userName }) => {
     </html>
   `;
 
-  // 1. If RESEND_API_KEY is present, send over HTTPS Port 443 via native fetch (Immune to Render Free Tier SMTP block)
+  // 1. If GMAIL_WEBHOOK_URL is configured, send via Google Apps Script HTTPS (Port 443 - 100% Free, sends from info@neuraltechsoft.com)
+  if (gmailWebhookUrl) {
+    try {
+      const gscriptData = await sendViaGoogleAppsScriptHttps({
+        webhookUrl: gmailWebhookUrl,
+        to: cleanTo,
+        subject: `Your NTS Password Reset Verification Code: ${otp}`,
+        text: plainText,
+        html: htmlContent
+      });
+
+      console.log(`[EmailService] OTP email sent successfully to ${cleanTo} via Google Apps Script HTTPS.`);
+      return gscriptData;
+    } catch (gscriptErr) {
+      console.warn(`[EmailService] Google Apps Script notice (${gscriptErr.message}). Attempting fallback...`);
+    }
+  }
+
+  // 2. If RESEND_API_KEY is present, send over HTTPS Port 443 via native fetch (Immune to Render Free Tier SMTP block)
   if (resendApiKey) {
     try {
       const resendData = await sendViaResendHttps({
@@ -165,7 +225,7 @@ const sendPasswordResetOtp = async ({ to, otp, userName }) => {
     }
   }
 
-  // 2. Direct SMTP Attempt (Port 465)
+  // 3. Direct SMTP Attempt (Port 465)
   const msgPayload = {
     text: plainText,
     from: `NTS Task Management <${senderMail}>`,
@@ -185,7 +245,7 @@ const sendPasswordResetOtp = async ({ to, otp, userName }) => {
   } catch (err465) {
     console.warn(`[EmailService] Port 465 notice (${err465.message}). Retrying on Port 587...`);
 
-    // 3. Fallback: Port 587 (STARTTLS)
+    // 4. Fallback: Port 587 (STARTTLS)
     try {
       const fallbackClient = createSmtpClient(587, false);
       const message = await fallbackClient.sendAsync(msgPayload);
@@ -194,7 +254,7 @@ const sendPasswordResetOtp = async ({ to, otp, userName }) => {
       return message;
     } catch (err587) {
       console.error(`[EmailService] Both Port 465 and Port 587 failed: ${err587.message}`);
-      throw new Error(`Email delivery blocked. (Note: On Render Free tier, ports 465 & 587 are blocked. Set RESEND_API_KEY in Render environment variables to send over HTTPS port 443).`);
+      throw new Error(`Email delivery blocked. (Note: On Render Free tier, SMTP ports 465 & 587 are blocked. Set GMAIL_WEBHOOK_URL in Render environment variables to send over HTTPS port 443 for free).`);
     }
   }
 };
