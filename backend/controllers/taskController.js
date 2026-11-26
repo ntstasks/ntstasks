@@ -9,10 +9,7 @@ const {
   Employee,
   Department,
   User,
-  TaskComment,
-  TaskAttachment,
-  TaskActivityLog,
-  TaskStatusHistory
+  TaskActivityLog
 } = require('../models');
 const { getISTDateString, getISTMonthString, getNowIST } = require('../utils/dateUtils');
 const { logTaskActivity } = require('../utils/activityLogger');
@@ -39,6 +36,9 @@ const formatTask = (task) => {
 
   return {
     ...plain,
+    comments: plain.comments || [],
+    attachments: plain.attachments || [],
+    status_history: plain.status_history || [],
     is_overdue: isOverdue,
     is_deadline_approaching: isDeadlineApproaching
   };
@@ -190,16 +190,6 @@ const getAllTasks = async (req, res) => {
           include: [
             { model: User, as: 'user', attributes: ['id', 'email', 'role'] }
           ]
-        },
-        {
-          model: TaskComment,
-          as: 'comments',
-          attributes: ['id']
-        },
-        {
-          model: TaskAttachment,
-          as: 'attachments',
-          attributes: ['id', 'file_name', 'file_size', 'file_type']
         }
       ],
       order,
@@ -254,31 +244,6 @@ const getTaskById = async (req, res) => {
           ]
         },
         {
-          model: TaskComment,
-          as: 'comments',
-          include: [
-            {
-              model: User,
-              as: 'author',
-              attributes: ['id', 'email', 'role'],
-              include: [{ model: Employee, as: 'employee', attributes: ['first_name', 'last_name', 'avatar_url'] }]
-            }
-          ],
-          order: [['created_at', 'ASC']]
-        },
-        {
-          model: TaskAttachment,
-          as: 'attachments',
-          include: [
-            {
-              model: User,
-              as: 'uploader',
-              attributes: ['id', 'email'],
-              include: [{ model: Employee, as: 'employee', attributes: ['first_name', 'last_name'] }]
-            }
-          ]
-        },
-        {
           model: TaskActivityLog,
           as: 'activity_logs',
           include: [
@@ -286,19 +251,6 @@ const getTaskById = async (req, res) => {
               model: User,
               as: 'user',
               attributes: ['id', 'email', 'role'],
-              include: [{ model: Employee, as: 'employee', attributes: ['first_name', 'last_name'] }]
-            }
-          ],
-          order: [['created_at', 'DESC']]
-        },
-        {
-          model: TaskStatusHistory,
-          as: 'status_history',
-          include: [
-            {
-              model: User,
-              as: 'user',
-              attributes: ['id', 'email'],
               include: [{ model: Employee, as: 'employee', attributes: ['first_name', 'last_name'] }]
             }
           ],
@@ -595,20 +547,6 @@ const updateTask = async (req, res) => {
 
     await task.save({ transaction: t });
 
-    // Record status history if changed
-    if (status && status !== previousStatus) {
-      await TaskStatusHistory.create(
-        {
-          task_id: task.id,
-          changed_by: req.user.id,
-          from_status: previousStatus,
-          to_status: status,
-          notes: notes || `Status changed from ${previousStatus} to ${status}.`
-        },
-        { transaction: t }
-      );
-    }
-
     await t.commit();
 
     // Log Activity
@@ -713,14 +651,6 @@ const updateTaskStatus = async (req, res) => {
     }
 
     await task.save();
-
-    await TaskStatusHistory.create({
-      task_id: task.id,
-      changed_by: req.user.id,
-      from_status: previousStatus,
-      to_status: status,
-      notes: 'Updated via Kanban board drag-and-drop.'
-    });
 
     await logTaskActivity({
       taskId: task.id,
@@ -838,143 +768,19 @@ const deleteTask = async (req, res) => {
   }
 };
 
-// ADD COMMENT to Task
+// ADD COMMENT to Task (Safe stub)
 const addComment = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { comment } = req.body;
-
-    if (!comment || !comment.trim()) {
-      return res.status(400).json({ message: 'Comment content cannot be empty.' });
-    }
-
-    const task = await Task.findByPk(id, {
-      include: [{ model: Employee, as: 'assigned_employees', through: { attributes: [] } }]
-    });
-
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found.' });
-    }
-
-    const newComment = await TaskComment.create({
-      task_id: task.id,
-      user_id: req.user.id,
-      comment: comment.trim()
-    });
-
-    await logTaskActivity({
-      taskId: task.id,
-      userId: req.user.id,
-      action: 'comment_added',
-      details: `Comment added by ${req.user.employee?.first_name || 'User'}.`
-    });
-
-    // Notify assigned employees and creator
-    const recipients = new Set();
-    if (task.creator_id !== req.user.id) recipients.add(task.creator_id);
-    task.assigned_employees.forEach((emp) => {
-      if (emp.user_id !== req.user.id) recipients.add(emp.user_id);
-    });
-
-    for (const recipientId of recipients) {
-      await createNotification({
-        userId: recipientId,
-        senderId: req.user.id,
-        taskId: task.id,
-        title: 'New Comment on Task',
-        message: `${req.user.employee?.first_name || 'A team member'} commented on "${task.title}": "${comment.trim().substring(0, 80)}..."`,
-        type: 'comment_added',
-        link: `/tasks/${task.id}`
-      });
-    }
-
-    const fullComment = await TaskComment.findByPk(newComment.id, {
-      include: [
-        {
-          model: User,
-          as: 'author',
-          attributes: ['id', 'email', 'role'],
-          include: [{ model: Employee, as: 'employee', attributes: ['first_name', 'last_name', 'avatar_url'] }]
-        }
-      ]
-    });
-
-    return res.status(201).json({
-      message: 'Comment added successfully.',
-      comment: fullComment
-    });
-  } catch (error) {
-    console.error('Add comment error:', error);
-    return res.status(500).json({ message: 'Failed to add comment.' });
-  }
+  return res.json({ message: 'Comment feature is disabled.', comment: null });
 };
 
-// UPLOAD ATTACHMENT
+// UPLOAD ATTACHMENT (Safe stub)
 const uploadAttachment = async (req, res) => {
-  try {
-    const { id } = req.params;
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded.' });
-    }
-
-    const task = await Task.findByPk(id);
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found.' });
-    }
-
-    const attachment = await TaskAttachment.create({
-      task_id: task.id,
-      user_id: req.user.id,
-      file_name: req.file.originalname,
-      file_path: `/uploads/${req.file.filename}`,
-      file_size: req.file.size,
-      file_type: req.file.mimetype
-    });
-
-    await logTaskActivity({
-      taskId: task.id,
-      userId: req.user.id,
-      action: 'attachment_uploaded',
-      details: `File "${req.file.originalname}" was attached.`
-    });
-
-    return res.status(201).json({
-      message: 'Attachment uploaded successfully.',
-      attachment
-    });
-  } catch (error) {
-    console.error('Upload attachment error:', error);
-    return res.status(500).json({ message: 'Failed to upload attachment.' });
-  }
+  return res.json({ message: 'Attachment feature is disabled.', attachment: null });
 };
 
-// DELETE ATTACHMENT
+// DELETE ATTACHMENT (Safe stub)
 const deleteAttachment = async (req, res) => {
-  try {
-    const { attachmentId } = req.params;
-    const attachment = await TaskAttachment.findByPk(attachmentId);
-
-    if (!attachment) {
-      return res.status(404).json({ message: 'Attachment not found.' });
-    }
-
-    if (req.user.role !== 'admin' && attachment.user_id !== req.user.id) {
-      return res.status(403).json({ message: 'Access denied: You cannot delete this attachment.' });
-    }
-
-    // Try to remove file from disk
-    const filePath = path.resolve(__dirname, '..', attachment.file_path.replace(/^\//, ''));
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-
-    await attachment.destroy();
-
-    return res.json({ message: 'Attachment deleted successfully.' });
-  } catch (error) {
-    console.error('Delete attachment error:', error);
-    return res.status(500).json({ message: 'Failed to delete attachment.' });
-  }
+  return res.json({ message: 'Attachment deleted.' });
 };
 
 // GET CARRY FORWARD CANDIDATES (Unfinished tasks from previous month/prior periods)
